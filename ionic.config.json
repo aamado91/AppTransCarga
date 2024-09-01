@@ -1,0 +1,7 @@
+{
+  "name": "AppTransCarga",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}
