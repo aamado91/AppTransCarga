@@ -3,6 +3,8 @@ import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Foto } from '../interfaces/foto.interface';
 import { Preferences } from '@capacitor/preferences';
+import { Platform } from '@ionic/angular';
+import { Capacitor } from '@capacitor/core';
 
 @Injectable({
   providedIn: 'root'
@@ -12,8 +14,11 @@ export class FotoService {
   /// Variables
   public listaFotos: Foto[] = [];
   private DB_FOTOS: string = 'fotos';
+  private platform: Platform;
 
-  constructor() { }
+  constructor(platform: Platform) {
+    this.platform = platform;
+  }
 
   /**
    * Tomar una foto usando la api de @capacitor/camera.
@@ -46,19 +51,28 @@ export class FotoService {
     // El API de sistema de archivos requiere que la foto esta en base64.
     const base64Data = await this.convertirEnBase64(foto);
 
-    // escribir el archivo.
-    const fileName = Date.now() + '.jpeg';
-    await Filesystem.writeFile({
-      path: fileName,
+    // Escribir el archivo.
+    const nombreArchivo = Date.now() + '.jpeg';
+    const archivoGuardado = await Filesystem.writeFile({
+      path: nombreArchivo,
       data: base64Data,
       directory: Directory.Data
     });
 
-    // Retornar información de la foto.
-    return {
-      rutaFoto: fileName,
-      rutaWebView: foto.webPath
-    };
+    // Si es una plataforma hidrida.
+    if (this.platform.is('hybrid')) {
+      return {
+        rutaFoto: archivoGuardado.uri,
+        rutaWebView: Capacitor.convertFileSrc(archivoGuardado.uri),
+      };
+    }
+    else {
+      // Retornar información de la foto.
+      return {
+        rutaFoto: nombreArchivo,
+        rutaWebView: foto.webPath
+      };
+    }
   }
 
   /**
@@ -69,16 +83,19 @@ export class FotoService {
     const { value } = await Preferences.get({ key: this.DB_FOTOS });
     this.listaFotos = (value ? JSON.parse(value) : []) as Foto[];
 
-    // Mostar la fotos en base64.
-    for (let foto of this.listaFotos) {
-      // Leer cada foto del sistema de archivos.
-      const readFile = await Filesystem.readFile({
-        path: foto.rutaFoto,
-        directory: Directory.Data,
-      });
+    // Si NO es una plataforma hidrida.
+    if (!this.platform.is('hybrid')) {
+      // Mostar la fotos en base64.
+      for (let foto of this.listaFotos) {
+        // Leer cada foto del sistema de archivos.
+        const readFile = await Filesystem.readFile({
+          path: foto.rutaFoto,
+          directory: Directory.Data
+        });
 
-      // Para la plataforma web se carga la foto en base64.
-      foto.rutaWebView = `data:image/jpeg;base64,${readFile.data}`;
+        // Para la plataforma web se carga la foto en base64.
+        foto.rutaWebView = `data:image/jpeg;base64,${readFile.data}`;
+      }
     }
   }
 
@@ -89,10 +106,21 @@ export class FotoService {
    */
   private async convertirEnBase64(photo: Photo) {
 
-    const response = await fetch(photo.webPath!);
-    const blob = await response.blob();
+    // Si es una plataforma hidrida.
+    if (this.platform.is('hybrid')) {
+      // Leer archivo en base64
+      const file = await Filesystem.readFile({
+        path: photo.path!
+      });
 
-    return await this.convertirBlobToBase64(blob) as string;
+      return file.data;
+    }
+    else {
+      const response = await fetch(photo.webPath!);
+      const blob = await response.blob();
+
+      return await this.convertirBlobToBase64(blob) as string;
+    }
   }
 
   /**
